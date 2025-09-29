@@ -9,15 +9,15 @@ export default async function handler(req, res) {
     // Копируем заголовки, исключая проблемные
     const headers = {};
     Object.keys(req.headers).forEach(key => {
-      if (!['host', 'content-length'].includes(key.toLowerCase())) {
+      if (!['host', 'content-length', 'connection'].includes(key.toLowerCase())) {
         headers[key] = req.headers[key];
       }
     });
     
     // Готовим тело запроса
     let body;
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      body = JSON.stringify(req.body);
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
+      body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
     }
     
     // Делаем запрос к OpenAI
@@ -27,22 +27,25 @@ export default async function handler(req, res) {
       body: body
     });
     
-    // Получаем данные
-    const data = await response.text();
+    // Получаем данные как ArrayBuffer для корректной передачи
+    const data = await response.arrayBuffer();
     
     // Устанавливаем статус
     res.status(response.status);
     
-    // Копируем заголовки ответа
+    // Копируем только безопасные заголовки ответа
+    const skipHeaders = ['content-encoding', 'transfer-encoding', 'connection', 'content-length'];
     response.headers.forEach((value, key) => {
-      res.setHeader(key, value);
+      if (!skipHeaders.includes(key.toLowerCase())) {
+        res.setHeader(key, value);
+      }
     });
     
-    // Отправляем ответ
-    res.end(data);
+    // Отправляем ответ как Buffer
+    res.end(Buffer.from(data));
     
   } catch (error) {
     console.error('Proxy error:', error);
-    res.status(500).json({ error: 'Proxy failed' });
+    res.status(500).json({ error: 'Proxy failed', details: error.message });
   }
 }
